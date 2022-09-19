@@ -602,16 +602,6 @@ def metadata_dumps(opt,
     This is intended to be turned into JSON and stored in the 
     "sd
     '''
-
-    # top-level metadata minus `image` or `images`
-    metadata = {
-        'model'       : 'stable diffusion',
-        'model_id'    : opt.model,
-        'model_hash'  : model_hash,
-        'app_id'      : APP_ID,
-        'app_version' : APP_VERSION,
-    }
-
     # add some RFC266 fields that are generated internally, and not as
     # user args
     image_dict = opt.to_dict(
@@ -657,22 +647,22 @@ def metadata_dumps(opt,
     else:
         rfc_dict['type']  = 'txt2img'
 
+    images = []
     if len(seeds)==0 and opt.seed:
         seeds=[seed]
+        
+    for seed in seeds:
+        rfc_dict['seed'] = seed
+        images.append(copy.copy(rfc_dict))
 
-    if opt.grid:
-        images = []
-        for seed in seeds:
-            rfc_dict['seed'] = seed
-            images.append(copy.copy(rfc_dict))
-        metadata['images'] = images
-    else:
-        # there should only ever be a single seed if we did not generate a grid
-        assert len(seeds) == 1, 'Expected a single seed'
-        rfc_dict['seed'] = seeds[0]
-        metadata['image'] = rfc_dict
-
-    return metadata
+    return {
+        'model'       : 'stable diffusion',
+        'model_id'    : opt.model,
+        'model_hash'  : model_hash,
+        'app_id'      : APP_ID,
+        'app_version' : APP_VERSION,
+        'images'      : images,
+    }
 
 def metadata_loads(metadata):
     '''
