@@ -5,11 +5,6 @@ import torch.nn as nn
 from ldm.dream.devices import choose_torch_device
 from ldm.models.diffusion.sampler import Sampler
 
-# just for debugging
-from PIL import Image
-from einops import rearrange, repeat
-import numpy as np
-
 class CFGDenoiser(nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -57,9 +52,59 @@ class KSampler(Sampler):
             ddim_eta=0.0,
             model=self.model.inner_model,   # use the inner model to make the schedule, not the denoiser wrapped model
             verbose=False,
-        )            
+        )
+        print(f'ddim_num_steps={ddim_num_steps}') # want total steps here (50)
+        self.sigmas = self.model.get_sigmas(ddim_num_steps)
+        
+    @torch.no_grad()
+    def p_sample(
+            self,
+            img,
+            cond,
+            ts,
+            index,
+            unconditional_guidance_scale=1.0,
+            unconditional_conditioning=None,
+            **kwargs,
+    ):
+        if self.model_wrap is None:
+            self.model_wrap = CFGDenoiser(self.model)
+        extra_args = {
+            'cond': cond,
+            'uncond': unconditional_conditioning,
+            'cond_scale': unconditional_guidance_scale,
+        }
+        if self.s_in is None:
+            self.s_in  = img.new_ones([img.shape[0]])
+        if self.ds is None:
+            self.ds = []
+        img =  K.sampling.__dict__[f'_{self.schedule}'](
+            self.model_wrap,
+            img,
+            self.sigmas,
+            self.ddim_steps-index-1,
+            s_in = self.s_in,
+            ds   = self.ds,
+            extra_args=extra_args,
+        )
 
-    # def do_sampling(
+        return img, None, None
+
+    def get_initial_image(self,x_T,shape,steps):
+        if x_T is not None:
+            return x_T * self.sigmas[0]
+        else:
+            return (torch.randn(shape, device=self.device) * self.sigmas[0])
+        
+    def prepare_to_sample(self,steps):
+        self.ddim_steps = steps
+        self.model_wrap = None
+        self.ds         = None
+        self.s_in       = None
+        self.sigmas     = self.model.get_sigmas(steps)
+
+ # unused code
+            # def do_sampling(
     #         self,
     #         cond,
     #         shape,
@@ -73,50 +118,3 @@ class KSampler(Sampler):
     #     # kwargs['img_callback']=route_callback
     #     return super().do_sampling(cond,shape,**kwargs)
 
-    @torch.no_grad()
-    def p_sample(
-            self,
-            img,
-            cond,
-            ts,
-            index,
-            unconditional_guidance_scale=1.0,
-            unconditional_conditioning=None,
-            **kwargs,
-    ):
-        model_wrap_cfg = CFGDenoiser(self.model)
-        extra_args = {
-            'cond': cond,
-            'uncond': unconditional_conditioning,
-            'cond_scale': unconditional_guidance_scale,
-        }
-        if self.s_in is None:
-            self.s_in  = img.new_ones([img.shape[0]])
-        if self.ds is None:
-            self.ds = []
-        img =  K.sampling.__dict__[f'_{self.schedule}'](
-            model_wrap_cfg,
-            img,
-            self.sigmas,
-            len(self.sigmas)-index-1,  # adjust for reverse index in ddim/plms and 1-based indexing in trange
-            s_in = self.s_in,
-            ds   = self.ds,
-            extra_args=extra_args,
-        )
-
-        return img, None, None
-
-    def get_initial_image(self,x_T,shape,steps):
-        if x_T is None:
-            return (
-                torch.randn(shape, device=self.device)
-                * self.sigmas[0]
-            )   # for GPU draw
-        else:
-            return x_T * self.sigmas[0]
-    
-    def prepare_to_sample(self,steps):
-        print(f'DEBUG: get_sigmas({steps})')
-        self.sigmas = self.model.get_sigmas(steps)
-        self.ds    = None
-        self.s_in  = None

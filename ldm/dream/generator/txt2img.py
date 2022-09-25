@@ -28,6 +28,8 @@ class Txt2Img(Generator):
                 width  // self.downsampling_factor,
             ]
             print(f'DEBUG: shape={shape}')
+                                
+            sampler.make_schedule(ddim_num_steps=steps, ddim_eta=ddim_eta, verbose=True)
             samples, _ = sampler.sample(
                 batch_size                   = 1,
                 S                            = steps,

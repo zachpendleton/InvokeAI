@@ -13,7 +13,6 @@ class Img2Img(Generator):
         super().__init__(model, precision)
         self.init_latent         = None    # by get_noise()
 
-    @torch.no_grad()
     def get_make_image(self,prompt,sampler,steps,cfg_scale,ddim_eta,
                        conditioning,init_image,strength,step_callback=None,**kwargs):
         """
@@ -34,23 +33,24 @@ class Img2Img(Generator):
         t_enc = int(strength * steps)
         uc, c   = conditioning
 
-        @torch.no_grad()
         def make_image(x_T):
             # this is for debugging only
             image_debug = self.sample_to_image(self.init_latent)
-            image_debug.save(f'./outputs/img-samples/intermediates/000base.png','PNG')
+            print(f'DEBUG: saving base image to outputs/img-samples/intermediates')
+            image_debug.save(f'./outputs/img-samples/intermediates/000-base.png','PNG')
             # encode (scaled latent)
             z_enc = sampler.stochastic_encode(
                 self.init_latent,
                 torch.tensor([t_enc]).to(self.model.device),
                 noise=x_T
             )
+            sampler.make_schedule(ddim_num_steps=steps, ddim_eta=ddim_eta, verbose=False)
             samples,_ = sampler.sample(
                 batch_size   = 1,
                 S            = t_enc,
                 shape        = z_enc.shape[1:],
-                conditioning = c,
                 x_T          = z_enc,
+                conditioning = c,
                 unconditional_guidance_scale = cfg_scale,
                 unconditional_conditioning   = uc,
                 eta                          = ddim_eta,

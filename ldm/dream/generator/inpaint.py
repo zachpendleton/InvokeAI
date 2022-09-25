@@ -27,17 +27,6 @@ class Inpaint(Img2Img):
         mask_image = mask_image[0][0].unsqueeze(0).repeat(4,1,1).unsqueeze(0)
         mask_image = repeat(mask_image, '1 ... -> b ...', b=1)
 
-        # PLMS sampler not supported yet, so ignore previous sampler
-        if not isinstance(sampler,DDIMSampler):
-            print(
-                f">> sampler '{sampler.__class__.__name__}' is not yet supported. Using DDIM sampler"
-            )
-            sampler = DDIMSampler(self.model, device=self.model.device)
-
-        sampler.make_schedule(
-            ddim_num_steps=steps, ddim_eta=ddim_eta, verbose=False
-        )
-
         scope = choose_autocast(self.precision)
         with scope(self.model.device.type):
             self.init_latent = self.model.get_first_stage_encoding(
@@ -57,17 +46,24 @@ class Inpaint(Img2Img):
                 torch.tensor([t_enc]).to(self.model.device),
                 noise=x_T
             )
+
+            sampler.make_schedule(
+                ddim_num_steps=steps, ddim_eta=ddim_eta, verbose=False
+            )
                                        
             # decode it
-            samples = sampler.decode(
-                z_enc,
-                c,
-                t_enc,
-                img_callback                 = step_callback,
+            samples = sampler.sample(
+                batch_size   = 1,
+                S            = t_enc,
+                shape        = z_enc.shape[1:],
+                conditioning = c,
+                x_T          = z_enc,
                 unconditional_guidance_scale = cfg_scale,
-                unconditional_conditioning = uc,
+                unconditional_conditioning   = uc,
+                eta                          = ddim_eta,
+                img_callback                 = step_callback,
+                verbose                      = False,
                 mask                       = mask_image,
-                init_latent                = self.init_latent
             )
             return self.sample_to_image(samples)
 

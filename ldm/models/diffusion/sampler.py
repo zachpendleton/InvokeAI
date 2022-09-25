@@ -40,7 +40,7 @@ class Sampler(object):
             ddim_discretize='uniform',
             ddim_eta=0.0,
             model=None,
-            verbose=True,
+            verbose=False,
     ):
         if model is None:
             model=self.model
@@ -136,7 +136,7 @@ class Sampler(object):
         noise_dropout=0.0,
         score_corrector=None,
         corrector_kwargs=None,
-        verbose=True,
+        verbose=False,
         x_T=None,
         log_every_t=100,
         unconditional_guidance_scale=1.0,
@@ -144,21 +144,7 @@ class Sampler(object):
         # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
         **kwargs,
     ):
-        print(f'S={S}, batch_size={batch_size}')
-        if conditioning is not None:
-            if isinstance(conditioning, dict):
-                cbs = conditioning[list(conditioning.keys())[0]].shape[0]
-                if cbs != batch_size:
-                    print(
-                        f'Warning: Got {cbs} conditionings but batch-size is {batch_size}'
-                    )
-            else:
-                if conditioning.shape[0] != batch_size:
-                    print(
-                        f'Warning: Got {conditioning.shape[0]} conditionings but batch-size is {batch_size}'
-                    )
-                    
-        self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=verbose)
+        ts = self.ddim_timesteps[:S]
 
         # sampling
         C, H, W = shape
@@ -166,6 +152,7 @@ class Sampler(object):
         samples, intermediates = self.do_sampling(
             conditioning,
             shape,
+            timesteps=ts,
             callback=callback,
             img_callback=img_callback,
             quantize_denoised=quantize_x0,
@@ -207,10 +194,10 @@ class Sampler(object):
             self,
             cond,
             shape,
+            timesteps=None,
             x_T=None,
             ddim_use_original_steps=False,
             callback=None,
-            timesteps=None,
             quantize_denoised=False,
             mask=None,
             x0=None,
@@ -225,35 +212,12 @@ class Sampler(object):
             steps=None,
     ):
         b = shape[0]
-
-        if timesteps is None:
-            timesteps = (
-                self.ddpm_num_timesteps
-                if ddim_use_original_steps
-                else self.ddim_timesteps
-            )
-        elif timesteps is not None and not ddim_use_original_steps:
-            subset_end = (
-                int(
-                    min(timesteps / self.ddim_timesteps.shape[0], 1)
-                    * self.ddim_timesteps.shape[0]
-                )
-                - 1
-            ) 
-            timesteps = self.ddim_timesteps[:subset_end]
-
         time_range = (
             list(reversed(range(0, timesteps)))
             if ddim_use_original_steps
             else np.flip(timesteps)
         )
-        #        total_steps = (
-        #            timesteps if ddim_use_original_steps else timesteps.shape[0]
-        #        )
-        total_steps=self.ddim_num_steps
-
-        print(f'DEBUG: timesteps={timesteps}')
-        print(f'DEBUG: total_steps={total_steps}')
+        total_steps=steps
 
         iterator = tqdm(
             time_range,
@@ -262,8 +226,8 @@ class Sampler(object):
             dynamic_ncols=True,
         )
         old_eps = []
-        self.prepare_to_sample(steps)
-        img = self.get_initial_image(x_T,shape,steps)
+        self.prepare_to_sample(total_steps)
+        img = self.get_initial_image(x_T,shape,total_steps)
 
         # probably don't need this at all
         intermediates = {'x_inter': [img], 'pred_x0': [img]}
@@ -307,9 +271,6 @@ class Sampler(object):
                 t_next=ts_next,
             )
             img, pred_x0, e_t = outs
-            # debugging only
-            # image_debug = self.sample_to_image(img)
-            # image_debug.save(f'./outputs/img-samples/intermediates/{i:03}.png','PNG')
 
             old_eps.append(e_t)
             if len(old_eps) >= 4:
@@ -318,7 +279,6 @@ class Sampler(object):
                 callback(i)
             if img_callback:
                 img_callback(img)
-#                img_callback(pred_x0, i)
 
             if index % log_every_t == 0 or index == total_steps - 1:
                 intermediates['x_inter'].append(img)
