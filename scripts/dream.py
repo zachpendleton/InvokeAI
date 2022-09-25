@@ -312,8 +312,10 @@ def main_loop(gen, opt, infile):
 
             if operation == 'generate':
                 catch_ctrl_c = infile is None # if running interactively, we catch keyboard interrupts
+                print('*DEBUG: Will write intermediate images into /outputs/img-samples/intermediates')
                 gen.prompt2image(
                     image_callback=image_writer,
+#                    step_callback=gen.write_intermediate_images(5,'./outputs/img-samples/intermediates'), #DEBUGGING ONLY - DELETE
                     catch_interrupts=catch_ctrl_c,
                     **vars(opt)
                 )

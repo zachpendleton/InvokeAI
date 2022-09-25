@@ -3,6 +3,12 @@ import k_diffusion as K
 import torch
 import torch.nn as nn
 from ldm.dream.devices import choose_torch_device
+from ldm.models.diffusion.sampler import Sampler
+
+# just for debugging
+from PIL import Image
+from einops import rearrange, repeat
+import numpy as np
 
 class CFGDenoiser(nn.Module):
     def __init__(self, model):
@@ -14,15 +20,24 @@ class CFGDenoiser(nn.Module):
         sigma_in = torch.cat([sigma] * 2)
         cond_in = torch.cat([uncond, cond])
         uncond, cond = self.inner_model(x_in, sigma_in, cond=cond_in).chunk(2)
-        return uncond + (cond - uncond) * cond_scale
+        result = uncond + (cond - uncond) * cond_scale
+        return result
 
 
-class KSampler(object):
+class KSampler(Sampler):
+    '''
+    This class wraps all the k* samplers from Karen Crowston's k-diffusion
+    library.
+    '''
     def __init__(self, model, schedule='lms', device=None, **kwargs):
-        super().__init__()
-        self.model = K.external.CompVisDenoiser(model)
-        self.schedule = schedule
-        self.device   = device or choose_torch_device()
+        denoiser = K.external.CompVisDenoiser(model)
+        super().__init__(
+            denoiser,
+            schedule,
+            steps=model.num_timesteps,
+        )
+        self.ds    = None
+        self.s_in  = None
 
         def forward(self, x, sigma, uncond, cond, cond_scale):
             x_in = torch.cat([x] * 2)
@@ -33,56 +48,86 @@ class KSampler(object):
             ).chunk(2)
             return uncond + (cond - uncond) * cond_scale
 
-    # most of these arguments are ignored and are only present for compatibility with
-    # other samples
-    @torch.no_grad()
-    def sample(
-        self,
-        S,
-        batch_size,
-        shape,
-        conditioning=None,
-        callback=None,
-        normals_sequence=None,
-        img_callback=None,
-        quantize_x0=False,
-        eta=0.0,
-        mask=None,
-        x0=None,
-        temperature=1.0,
-        noise_dropout=0.0,
-        score_corrector=None,
-        corrector_kwargs=None,
-        verbose=True,
-        x_T=None,
-        log_every_t=100,
-        unconditional_guidance_scale=1.0,
-        unconditional_conditioning=None,
-        # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
-        **kwargs,
+    def make_schedule(
+            self,
+            ddim_num_steps,
+            ddim_discretize='uniform',
+            ddim_eta=0.0,
+            model=None,
+            verbose=False,
     ):
-        def route_callback(k_callback_values):
-            if img_callback is not None:
-                img_callback(k_callback_values['x'], k_callback_values['i'])
+        '''
+        Called during initializtion, this sets up various constants
+        specific to the image generation task
+        '''
+        super().make_schedule(
+            ddim_num_steps,
+            ddim_discretize='uniform',
+            ddim_eta=0.0,
+            model=self.model.inner_model,   # use the inner model to make the schedule, not the denoiser wrapped model
+            verbose=False,
+        )            
 
-        sigmas = self.model.get_sigmas(S)
-        if x_T is not None:
-            x = x_T * sigmas[0]
-        else:
-            x = (
-                torch.randn([batch_size, *shape], device=self.device)
-                * sigmas[0]
-            )   # for GPU draw
+    # most of these arguments are ignored and are only present for compatibility with other samples
+    @torch.no_grad()
+    def p_sample(
+            self,
+            img,
+            cond,
+            ts,
+            index,
+            unconditional_guidance_scale=1.0,
+            unconditional_conditioning=None,
+            **kwargs,
+    ):
+        '''
+        This does the actual sampling of the model. It relies on the k_diffusion/sampling.py
+        module having predictable names for its key functions. For example, sampler *k_lms* corresponds
+        to the function *_lms*.
+        '''
         model_wrap_cfg = CFGDenoiser(self.model)
         extra_args = {
-            'cond': conditioning,
+            'cond': cond,
             'uncond': unconditional_conditioning,
             'cond_scale': unconditional_guidance_scale,
         }
-        return (
-            K.sampling.__dict__[f'sample_{self.schedule}'](
-                model_wrap_cfg, x, sigmas, extra_args=extra_args,
-                callback=route_callback
-            ),
-            None,
+        if self.s_in is None:
+            self.s_in  = img.new_ones([img.shape[0]])
+        if self.ds is None:
+            self.ds = []
+        img =  K.sampling.__dict__[f'_{self.schedule}'](
+            model_wrap_cfg,
+            img,
+            self.sigmas,
+            len(self.sigmas)-index-1,  # adjust for reverse index in ddim/plms and 1-based indexing in trange
+            s_in = self.s_in,
+            ds   = self.ds,
+            extra_args=extra_args,
         )
+
+        return img, None, None
+
+    def get_initial_image(self,x_T,shape,steps):
+        '''
+        If there is no initial image (x_T==None), then this
+        returns a image-sized piece of random noise multiplied
+        by the first sigma value. If there is one, then it
+        multiplies the contents of the image by sigma.
+        '''
+        if x_T is None:
+            return (
+                torch.randn(shape, device=self.device)
+                * self.sigmas[0]
+            )   # for GPU draw
+        else:
+            return x_T * self.sigmas[0]
+    
+    def prepare_to_sample(self,steps):
+        '''
+        Called just before sampling begins, gives the
+        object a chance to initialize any state variables it
+        needs fo.
+        '''
+        self.sigmas = self.model.get_sigmas(steps)
+        self.ds    = None
+        self.s_in  = None

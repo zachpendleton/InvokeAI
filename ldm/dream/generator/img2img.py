@@ -21,13 +21,6 @@ class Img2Img(Generator):
         Return value depends on the seed at the time you call it.
         """
 
-        # PLMS sampler not supported yet, so ignore previous sampler
-        if not isinstance(sampler,DDIMSampler):
-            print(
-                f">> sampler '{sampler.__class__.__name__}' is not yet supported. Using DDIM sampler"
-            )
-            sampler = DDIMSampler(self.model, device=self.model.device)
-
         sampler.make_schedule(
             ddim_num_steps=steps, ddim_eta=ddim_eta, verbose=False
         )
@@ -43,20 +36,26 @@ class Img2Img(Generator):
 
         @torch.no_grad()
         def make_image(x_T):
+            # this is for debugging only
+            image_debug = self.sample_to_image(self.init_latent)
+            image_debug.save(f'./outputs/img-samples/intermediates/000base.png','PNG')
             # encode (scaled latent)
             z_enc = sampler.stochastic_encode(
                 self.init_latent,
                 torch.tensor([t_enc]).to(self.model.device),
                 noise=x_T
             )
-            # decode it
-            samples = sampler.decode(
-                z_enc,
-                c,
-                t_enc,
-                img_callback = step_callback,
-                unconditional_guidance_scale=cfg_scale,
-                unconditional_conditioning=uc,
+            samples,_ = sampler.sample(
+                batch_size   = 1,
+                S            = t_enc,
+                shape        = z_enc.shape[1:],
+                conditioning = c,
+                x_T          = z_enc,
+                unconditional_guidance_scale = cfg_scale,
+                unconditional_conditioning   = uc,
+                eta                          = ddim_eta,
+                step_callback                = step_callback,
+                verbose                      = False,
             )
             return self.sample_to_image(samples)
 

@@ -37,7 +37,7 @@ class Txt2Img(Generator):
                 unconditional_guidance_scale = cfg_scale,
                 unconditional_conditioning   = uc,
                 eta                          = ddim_eta,
-                img_callback                 = step_callback
+                step_callback                = step_callback
             )
             return self.sample_to_image(samples)
 
