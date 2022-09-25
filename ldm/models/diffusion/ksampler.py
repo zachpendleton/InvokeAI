@@ -53,8 +53,8 @@ class KSampler(Sampler):
             model=self.model.inner_model,   # use the inner model to make the schedule, not the denoiser wrapped model
             verbose=False,
         )
-        print(f'ddim_num_steps={ddim_num_steps}') # want total steps here (50)
-        self.sigmas = self.model.get_sigmas(ddim_num_steps)
+#        print(f'ddim_num_steps={ddim_num_steps}') # want total steps here (50)
+#        self.sigmas = self.model.get_sigmas(ddim_num_steps)
         
     @torch.no_grad()
     def p_sample(
@@ -78,11 +78,23 @@ class KSampler(Sampler):
             self.s_in  = img.new_ones([img.shape[0]])
         if self.ds is None:
             self.ds = []
+
+        # terrible, confusing names here
+        steps = self.ddim_num_steps
+        t_enc = self.ddim_steps
+        
+        # sigmas is a full steps in length, but t_enc might
+        # be less. We start in the middle of the sigma array
+        # and work our way to the end after t_enc steps.
+        # index starts at t_enc and works its way to zero,
+        # so the actual formula for indexing into sigmas:
+        # sigma_index = (steps-index)
+        s_index = t_enc - index -1
         img =  K.sampling.__dict__[f'_{self.schedule}'](
             self.model_wrap,
             img,
             self.sigmas,
-            self.ddim_steps-index-1,
+            s_index,
             s_in = self.s_in,
             ds   = self.ds,
             extra_args=extra_args,
@@ -92,7 +104,7 @@ class KSampler(Sampler):
 
     def get_initial_image(self,x_T,shape,steps):
         if x_T is not None:
-            return x_T * self.sigmas[0]
+            return x_T + x_T * self.sigmas[0]
         else:
             return (torch.randn(shape, device=self.device) * self.sigmas[0])
         
@@ -101,7 +113,8 @@ class KSampler(Sampler):
         self.model_wrap = None
         self.ds         = None
         self.s_in       = None
-        self.sigmas     = self.model.get_sigmas(steps)
+        print(f'steps={steps}') # want total steps here (37)
+        self.sigmas = self.model.get_sigmas(steps)
 
  # unused code
             # def do_sampling(
