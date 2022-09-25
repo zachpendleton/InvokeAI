@@ -54,7 +54,7 @@ class Img2Img(Generator):
                 unconditional_guidance_scale = cfg_scale,
                 unconditional_conditioning   = uc,
                 eta                          = ddim_eta,
-                step_callback                = step_callback,
+                img_callback                 = step_callback,
                 verbose                      = False,
             )
             return self.sample_to_image(samples)

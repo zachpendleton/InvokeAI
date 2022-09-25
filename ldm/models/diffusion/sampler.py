@@ -10,10 +10,6 @@ from tqdm import tqdm
 from functools import partial
 from ldm.dream.devices import choose_torch_device
 
-# just for debugging
-from PIL import Image
-from einops import rearrange, repeat
-
 from ldm.modules.diffusionmodules.util import (
     make_ddim_sampling_parameters,
     make_ddim_timesteps,
@@ -129,8 +125,9 @@ class Sampler(object):
         batch_size,
         shape,
         conditioning=None,
-        step_callback=None,
+        callback=None,
         normals_sequence=None,
+        img_callback=None,
         quantize_x0=False,
         eta=0.0,
         mask=None,
@@ -147,6 +144,7 @@ class Sampler(object):
         # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
         **kwargs,
     ):
+        print(f'S={S}, batch_size={batch_size}')
         if conditioning is not None:
             if isinstance(conditioning, dict):
                 cbs = conditioning[list(conditioning.keys())[0]].shape[0]
@@ -160,20 +158,16 @@ class Sampler(object):
                         f'Warning: Got {conditioning.shape[0]} conditionings but batch-size is {batch_size}'
                     )
                     
-        # self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=verbose)
-        self.ddim_timesteps = make_ddim_timesteps(
-            ddim_discr_method='uniform',
-            num_ddim_timesteps=S,
-            num_ddpm_timesteps=self.ddpm_num_timesteps,
-            verbose=verbose,
-        )
+        self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=verbose)
+
         # sampling
         C, H, W = shape
         shape = (batch_size, C, H, W)
         samples, intermediates = self.do_sampling(
             conditioning,
             shape,
-            step_callback=step_callback,
+            callback=callback,
+            img_callback=img_callback,
             quantize_denoised=quantize_x0,
             mask=mask,
             x0=x0,
@@ -183,6 +177,7 @@ class Sampler(object):
             score_corrector=score_corrector,
             corrector_kwargs=corrector_kwargs,
             x_T=x_T,
+            log_every_t=log_every_t,
             unconditional_guidance_scale=unconditional_guidance_scale,
             unconditional_conditioning=unconditional_conditioning,
             steps=S,
@@ -214,11 +209,13 @@ class Sampler(object):
             shape,
             x_T=None,
             ddim_use_original_steps=False,
-            step_callback=None,
+            callback=None,
             timesteps=None,
             quantize_denoised=False,
             mask=None,
             x0=None,
+            img_callback=None,
+            log_every_t=100,
             temperature=1.0,
             noise_dropout=0.0,
             score_corrector=None,
@@ -306,14 +303,23 @@ class Sampler(object):
                 t_next=ts_next,
             )
             img, pred_x0, e_t = outs
+            # debugging only
+            # image_debug = self.sample_to_image(img)
+            # image_debug.save(f'./outputs/img-samples/intermediates/{i:03}.png','PNG')
 
             old_eps.append(e_t)
             if len(old_eps) >= 4:
                 old_eps.pop(0)
+            if callback:
+                callback(i)
+            if img_callback:
+                img_callback(pred_x0, i)
 
-            if step_callback:
-                step_callback(img)
-        return img, []        # used to return a list of intermediates, but this is obviated by callback function
+            if index % log_every_t == 0 or index == total_steps - 1:
+                intermediates['x_inter'].append(img)
+                intermediates['pred_x0'].append(pred_x0)
+
+        return img, intermediates
 
     def get_initial_image(self,x_T,shape,timesteps=None):
         if x_T is None:

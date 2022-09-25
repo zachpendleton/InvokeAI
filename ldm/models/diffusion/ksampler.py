@@ -20,15 +20,10 @@ class CFGDenoiser(nn.Module):
         sigma_in = torch.cat([sigma] * 2)
         cond_in = torch.cat([uncond, cond])
         uncond, cond = self.inner_model(x_in, sigma_in, cond=cond_in).chunk(2)
-        result = uncond + (cond - uncond) * cond_scale
-        return result
+        return uncond + (cond - uncond) * cond_scale
 
 
 class KSampler(Sampler):
-    '''
-    This class wraps all the k* samplers from Karen Crowston's k-diffusion
-    library.
-    '''
     def __init__(self, model, schedule='lms', device=None, **kwargs):
         denoiser = K.external.CompVisDenoiser(model)
         super().__init__(
@@ -56,10 +51,6 @@ class KSampler(Sampler):
             model=None,
             verbose=False,
     ):
-        '''
-        Called during initializtion, this sets up various constants
-        specific to the image generation task
-        '''
         super().make_schedule(
             ddim_num_steps,
             ddim_discretize='uniform',
@@ -68,7 +59,22 @@ class KSampler(Sampler):
             verbose=False,
         )            
 
-    # most of these arguments are ignored and are only present for compatibility with other samples
+    def do_sampling(
+            self,
+            cond,
+            shape,
+            **kwargs
+    ):
+        # callback = kwargs['img_callback']
+        # def route_callback(k_callback_values):
+        #     if callback is not None:
+        #         callback(k_callback_values['x'], k_callback_values['i'])
+
+        # kwargs['img_callback']=route_callback
+        return super().do_sampling(cond,shape,**kwargs)
+
+    # most of these arguments are ignored and are only present for compatibility with
+    # other samples
     @torch.no_grad()
     def p_sample(
             self,
@@ -80,11 +86,6 @@ class KSampler(Sampler):
             unconditional_conditioning=None,
             **kwargs,
     ):
-        '''
-        This does the actual sampling of the model. It relies on the k_diffusion/sampling.py
-        module having predictable names for its key functions. For example, sampler *k_lms* corresponds
-        to the function *_lms*.
-        '''
         model_wrap_cfg = CFGDenoiser(self.model)
         extra_args = {
             'cond': cond,
@@ -108,12 +109,6 @@ class KSampler(Sampler):
         return img, None, None
 
     def get_initial_image(self,x_T,shape,steps):
-        '''
-        If there is no initial image (x_T==None), then this
-        returns a image-sized piece of random noise multiplied
-        by the first sigma value. If there is one, then it
-        multiplies the contents of the image by sigma.
-        '''
         if x_T is None:
             return (
                 torch.randn(shape, device=self.device)
@@ -123,11 +118,6 @@ class KSampler(Sampler):
             return x_T * self.sigmas[0]
     
     def prepare_to_sample(self,steps):
-        '''
-        Called just before sampling begins, gives the
-        object a chance to initialize any state variables it
-        needs fo.
-        '''
         self.sigmas = self.model.get_sigmas(steps)
         self.ds    = None
         self.s_in  = None

@@ -6,6 +6,7 @@ from tqdm import tqdm
 from functools import partial
 from ldm.dream.devices import choose_torch_device
 from ldm.models.diffusion.sampler import Sampler
+from ldm.modules.diffusionmodules.util import  noise_like
 
 class DDIMSampler(Sampler):
     def __init__(self, model, schedule='linear', device=None, **kwargs):

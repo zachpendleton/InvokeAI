@@ -27,6 +27,7 @@ class Txt2Img(Generator):
                 height // self.downsampling_factor,
                 width  // self.downsampling_factor,
             ]
+            print(f'DEBUG: shape={shape}')
             samples, _ = sampler.sample(
                 batch_size                   = 1,
                 S                            = steps,
@@ -37,7 +38,7 @@ class Txt2Img(Generator):
                 unconditional_guidance_scale = cfg_scale,
                 unconditional_conditioning   = uc,
                 eta                          = ddim_eta,
-                step_callback                = step_callback
+                img_callback                 = step_callback
             )
             return self.sample_to_image(samples)
 

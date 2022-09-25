@@ -756,7 +756,7 @@ class Generate:
     def _sample_to_image(self, samples):
         if not self.base_generator:
             from ldm.dream.generator import Generator
-            self.base_generator = Generator(self.model,self.precision)
+            self.base_generator = Generator(self.model)
         return self.base_generator.sample_to_image(samples)
 
     def _set_sampler(self):
@@ -1054,15 +1054,3 @@ class Generate:
             f.write(hash)
         return hash
 
-    def write_intermediate_images(self,modulus,path):
-        counter = -1
-        if not os.path.exists(path):
-            os.makedirs(path)
-        def callback(img):
-            nonlocal counter
-            counter += 1
-            if counter % modulus != 0:
-                return;
-            image = self.sample_to_image(img)
-            image.save(os.path.join(path,f'{counter:03}.png'),'PNG')
-        return callback

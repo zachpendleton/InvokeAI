@@ -63,7 +63,7 @@ class Inpaint(Img2Img):
                 z_enc,
                 c,
                 t_enc,
-                step_callback                = step_callback,
+                img_callback                 = step_callback,
                 unconditional_guidance_scale = cfg_scale,
                 unconditional_conditioning = uc,
                 mask                       = mask_image,
