@@ -44,7 +44,7 @@ class Sampler(object):
     ):
         if model is None:
             model=self.model
-            
+        self.ddim_num_steps = ddim_num_steps
         if ddim_eta != 0:
             raise ValueError('ddim_eta must be 0 for PLMS')
         self.ddim_timesteps = make_ddim_timesteps(
@@ -247,9 +247,13 @@ class Sampler(object):
             if ddim_use_original_steps
             else np.flip(timesteps)
         )
-        total_steps = (
-            timesteps if ddim_use_original_steps else timesteps.shape[0]
-        )
+        #        total_steps = (
+        #            timesteps if ddim_use_original_steps else timesteps.shape[0]
+        #        )
+        total_steps=self.ddim_num_steps
+
+        print(f'DEBUG: timesteps={timesteps}')
+        print(f'DEBUG: total_steps={total_steps}')
 
         iterator = tqdm(
             time_range,
@@ -313,7 +317,8 @@ class Sampler(object):
             if callback:
                 callback(i)
             if img_callback:
-                img_callback(pred_x0, i)
+                img_callback(img)
+#                img_callback(pred_x0, i)
 
             if index % log_every_t == 0 or index == total_steps - 1:
                 intermediates['x_inter'].append(img)

@@ -59,22 +59,20 @@ class KSampler(Sampler):
             verbose=False,
         )            
 
-    def do_sampling(
-            self,
-            cond,
-            shape,
-            **kwargs
-    ):
-        # callback = kwargs['img_callback']
-        # def route_callback(k_callback_values):
-        #     if callback is not None:
-        #         callback(k_callback_values['x'], k_callback_values['i'])
+    # def do_sampling(
+    #         self,
+    #         cond,
+    #         shape,
+    #         **kwargs
+    # ):
+    #     # callback = kwargs['img_callback']
+    #     # def route_callback(k_callback_values):
+    #     #     if callback is not None:
+    #     #         callback(k_callback_values['x'], k_callback_values['i'])
 
-        # kwargs['img_callback']=route_callback
-        return super().do_sampling(cond,shape,**kwargs)
+    #     # kwargs['img_callback']=route_callback
+    #     return super().do_sampling(cond,shape,**kwargs)
 
-    # most of these arguments are ignored and are only present for compatibility with
-    # other samples
     @torch.no_grad()
     def p_sample(
             self,
@@ -118,6 +116,7 @@ class KSampler(Sampler):
             return x_T * self.sigmas[0]
     
     def prepare_to_sample(self,steps):
+        print(f'DEBUG: get_sigmas({steps})')
         self.sigmas = self.model.get_sigmas(steps)
         self.ds    = None
         self.s_in  = None
