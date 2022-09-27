@@ -265,7 +265,6 @@ class Sampler(object):
         The ddim and plms samplers work on timesteps. This method is called after
         ddim_timesteps are created in make_schedule(), and selects the portion of
         timesteps that will be used for sampling, depending on the t_enc in img2img.
-        This method is implemented in dp_sampler.py.
         '''
-        return None
+        return self.ddim_timesteps[:ddim_steps]
     
