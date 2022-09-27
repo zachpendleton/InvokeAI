@@ -30,9 +30,9 @@ class Sampler(object):
                 attr = attr.to(torch.float32).to(torch.device(self.device))
         setattr(self, name, attr)
 
-        # make_schedule() initializes a bunch of attributes, most of which are
-        # needed only by the ddim and plms samplers. At some point, consider
-        # splitting it up
+    # make_schedule() is called prior to sampling() and can be used
+    # to initialize any state variables. It was originally used in
+    # the DDIM scheduler, and enhance all the ddim* variable names
     @torch.no_grad()
     def make_schedule(
             self,
@@ -42,80 +42,17 @@ class Sampler(object):
             model=None,
             verbose=False,
     ):
-        if model is None:
-            model=self.model
+        if model is not None:
+            self.model = model
         self.ddim_num_steps = ddim_num_steps
-        if ddim_eta != 0:
-            raise ValueError('ddim_eta must be 0 for PLMS')
+        self.ddim_eta = ddim_eta
+        self.ddim_discretize = ddim_discretize
+        self.verbose = verbose
         self.ddim_timesteps = make_ddim_timesteps(
             ddim_discr_method=ddim_discretize,
             num_ddim_timesteps=ddim_num_steps,
             num_ddpm_timesteps=self.ddpm_num_timesteps,
             verbose=verbose,
-        )
-        alphas_cumprod = model.alphas_cumprod
-        assert (
-            alphas_cumprod.shape[0] == self.ddpm_num_timesteps
-        ), 'alphas have to be defined for each timestep'
-        to_torch = (
-            lambda x: x.clone()
-            .detach()
-            .to(torch.float32)
-            .to(model.device)
-        )
-
-        self.register_buffer('betas', to_torch(model.betas))
-        self.register_buffer('alphas_cumprod', to_torch(alphas_cumprod))
-        self.register_buffer(
-            'alphas_cumprod_prev', to_torch(model.alphas_cumprod_prev)
-        )
-
-        # calculations for diffusion q(x_t | x_{t-1}) and others
-        self.register_buffer(
-            'sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod.cpu()))
-        )
-        self.register_buffer(
-            'sqrt_one_minus_alphas_cumprod',
-            to_torch(np.sqrt(1.0 - alphas_cumprod.cpu())),
-        )
-        self.register_buffer(
-            'log_one_minus_alphas_cumprod',
-            to_torch(np.log(1.0 - alphas_cumprod.cpu())),
-        )
-        self.register_buffer(
-            'sqrt_recip_alphas_cumprod',
-            to_torch(np.sqrt(1.0 / alphas_cumprod.cpu())),
-        )
-        self.register_buffer(
-            'sqrt_recipm1_alphas_cumprod',
-            to_torch(np.sqrt(1.0 / alphas_cumprod.cpu() - 1)),
-        )
-
-        # ddim sampling parameters
-        (
-            ddim_sigmas,
-            ddim_alphas,
-            ddim_alphas_prev,
-        ) = make_ddim_sampling_parameters(
-            alphacums=alphas_cumprod.cpu(),
-            ddim_timesteps=self.ddim_timesteps,
-            eta=ddim_eta,
-            verbose=verbose,
-        )
-        self.register_buffer('ddim_sigmas', ddim_sigmas)
-        self.register_buffer('ddim_alphas', ddim_alphas)
-        self.register_buffer('ddim_alphas_prev', ddim_alphas_prev)
-        self.register_buffer(
-            'ddim_sqrt_one_minus_alphas', np.sqrt(1.0 - ddim_alphas)
-        )
-        sigmas_for_original_sampling_steps = ddim_eta * torch.sqrt(
-            (1 - self.alphas_cumprod_prev)
-            / (1 - self.alphas_cumprod)
-            * (1 - self.alphas_cumprod / self.alphas_cumprod_prev)
-        )
-        self.register_buffer(
-            'ddim_sigmas_for_original_num_steps',
-            sigmas_for_original_sampling_steps,
         )
 
     @torch.no_grad()
@@ -144,7 +81,8 @@ class Sampler(object):
         # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
         **kwargs,
     ):
-        ts = self.ddim_timesteps[:S]
+
+        ts = self.get_timesteps(S)
 
         # sampling
         C, H, W = shape
@@ -226,7 +164,7 @@ class Sampler(object):
             dynamic_ncols=True,
         )
         old_eps = []
-        self.prepare_to_sample(total_steps)
+        self.prepare_to_sample(t_enc=total_steps)
         img = self.get_initial_image(x_T,shape,total_steps)
 
         # probably don't need this at all
@@ -313,9 +251,21 @@ class Sampler(object):
     ):
         raise NotImplementedError("p_sample() must be implemented in a descendent class")
 
-    def prepare_to_sample(self,steps,**kwargs):
+    def prepare_to_sample(self,t_enc,**kwargs):
         '''
         Hook that will be called right before the very first invocation of p_sample()
-        to allow subclass to do additional initialization
+        to allow subclass to do additional initialization. t_enc corresponds to the actual
+        number of steps that will be run, and may be less than total steps if img2img is
+        active.
         '''
         pass
+
+    def get_timesteps(self,ddim_steps):
+        '''
+        The ddim and plms samplers work on timesteps. This method is called after
+        ddim_timesteps are created in make_schedule(), and selects the portion of
+        timesteps that will be used for sampling, depending on the t_enc in img2img.
+        This method is implemented in dp_sampler.py.
+        '''
+        return None
+    

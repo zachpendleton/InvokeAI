@@ -50,11 +50,20 @@ class KSampler(Sampler):
             ddim_num_steps,
             ddim_discretize='uniform',
             ddim_eta=0.0,
-            model=self.model.inner_model,   # use the inner model to make the schedule, not the denoiser wrapped model
+            model = model,
             verbose=False,
         )
-#        print(f'ddim_num_steps={ddim_num_steps}') # want total steps here (50)
-#        self.sigmas = self.model.get_sigmas(ddim_num_steps)
+        print(f'ddim_num_steps={ddim_num_steps}') # want total steps here (50)
+        sigmas = K.sampling.get_sigmas_karras(
+            n=ddim_num_steps,
+            sigma_min=self.model.sigmas[0].item(),
+            sigma_max=self.model.sigmas[-1].item(),
+            rho=7.,
+            device=self.device,
+            # must be a birch-san enhancement
+            # concat_zero=False
+        )
+        self.sigmas = sigmas
         
     @torch.no_grad()
     def p_sample(
@@ -81,7 +90,7 @@ class KSampler(Sampler):
 
         # terrible, confusing names here
         steps = self.ddim_num_steps
-        t_enc = self.ddim_steps
+        t_enc = self.t_enc
         
         # sigmas is a full steps in length, but t_enc might
         # be less. We start in the middle of the sigma array
@@ -89,7 +98,7 @@ class KSampler(Sampler):
         # index starts at t_enc and works its way to zero,
         # so the actual formula for indexing into sigmas:
         # sigma_index = (steps-index)
-        s_index = t_enc - index -1
+        s_index = t_enc - index - 1
         img =  K.sampling.__dict__[f'_{self.schedule}'](
             self.model_wrap,
             img,
@@ -108,26 +117,8 @@ class KSampler(Sampler):
         else:
             return (torch.randn(shape, device=self.device) * self.sigmas[0])
         
-    def prepare_to_sample(self,steps):
-        self.ddim_steps = steps
+    def prepare_to_sample(self,t_enc):
+        self.t_enc      = t_enc
         self.model_wrap = None
         self.ds         = None
         self.s_in       = None
-        print(f'steps={steps}') # want total steps here (37)
-        self.sigmas = self.model.get_sigmas(steps)
-
- # unused code
-            # def do_sampling(
-    #         self,
-    #         cond,
-    #         shape,
-    #         **kwargs
-    # ):
-    #     # callback = kwargs['img_callback']
-    #     # def route_callback(k_callback_values):
-    #     #     if callback is not None:
-    #     #         callback(k_callback_values['x'], k_callback_values['i'])
-
-    #     # kwargs['img_callback']=route_callback
-    #     return super().do_sampling(cond,shape,**kwargs)
-
