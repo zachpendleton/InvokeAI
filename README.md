@@ -20,6 +20,7 @@ _This repository was formally known as lstein/stable-diffusion_
 [![CI checks on main badge]][CI checks on main link] [![CI checks on dev badge]][CI checks on dev link] [![latest commit to dev badge]][latest commit to dev link]
 
 [![github open issues badge]][github open issues link] [![github open prs badge]][github open prs link]
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/invoke-ai/InvokeAI/blob/main/notebooks/Stable_Diffusion_AI_Notebook.ipynb)
 
 [CI checks on dev badge]: https://flat.badgen.net/github/checks/invoke-ai/InvokeAI/development?label=CI%20status%20on%20dev&cache=900&icon=github
 [CI checks on dev link]: https://github.com/invoke-ai/InvokeAI/actions?query=branch%3Adevelopment
